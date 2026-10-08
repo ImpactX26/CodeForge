@@ -1,0 +1,32 @@
+[
+  {
+    "plan_id": "A",
+    "strategy": "Pay everything now",
+    "params": {"skip_duplicates": false, "hold_bank_changed": false, "max_per_payment": 9999999, "batch_size": 10, "order": "due_date"}
+  },
+  {
+    "plan_id": "B",
+    "strategy": "Pay all except duplicates",
+    "params": {"skip_duplicates": true, "hold_bank_changed": false, "max_per_payment": 9999999, "batch_size": 10, "order": "due_date"}
+  },
+  {
+    "plan_id": "C",
+    "strategy": "Pay 38 clean, hold 2, batches of 10",
+    "params": {"skip_duplicates": true, "hold_bank_changed": true, "max_per_payment": 9999999, "batch_size": 10, "order": "due_date"}
+  },
+  {
+    "plan_id": "D",
+    "strategy": "Same as C in one big batch",
+    "params": {"skip_duplicates": true, "hold_bank_changed": true, "max_per_payment": 9999999, "batch_size": 50, "order": "due_date"}
+  },
+  {
+    "plan_id": "E",
+    "strategy": "Pay only invoices above Rs 1L today",
+    "params": {"skip_duplicates": true, "hold_bank_changed": true, "max_per_payment": 100000, "batch_size": 10, "order": "due_date"}
+  },
+  {
+    "plan_id": "F",
+    "strategy": "Pay nothing, escalate all",
+    "params": {"skip_duplicates": true, "hold_bank_changed": true, "max_per_payment": 0, "batch_size": 10, "order": "due_date"}
+  }
+]
