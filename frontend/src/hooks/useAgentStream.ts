@@ -1,106 +1,88 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { AgentEvent, Winner } from '../lib/plans';
 
-export type AgentEvent = { type: string; data: any };
+export function useAgentStream(apiBaseUrl?: string) {
+  const baseUrl: string =
+    apiBaseUrl || (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000';
 
-const EVENT_TYPES = ['run_started','executing','fork_started','plans_generated','plan_testing','plan_result','committing','committed','error','stream_end'];
-
-export function useAgentStream() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [status, setStatus] = useState<'idle' | 'running' | 'complete' | 'error'>('idle');
-  const esRef = useRef<EventSource | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const runRef = useRef(0);
+  const [isPolling, setIsPolling] = useState(false);
 
-  const stop = useCallback(() => {
-    esRef.current?.close(); esRef.current = null;
-    if (timerRef.current) clearInterval(timerRef.current); timerRef.current = null;
-  }, []);
+  const sinceRef = useRef(0);
+  const epochRef = useRef(-1);   // which backend run we are following
+  const busyRef = useRef(false); // never let two polls overlap
 
-  useEffect(() => stop, [stop]); // cleanup on unmount
-
-  const startRun = useCallback(async (task: string, mode: 'naive' | 'dry-run') => {
-    stop();
-    const runId = ++runRef.current;
-    setStatus('running');
-    setEvents([]);
-
-    const fallback = () => {
-      if (runId !== runRef.current) return;
-      console.warn('Backend unavailable. Using internal demo simulation.');
-      timerRef.current = runInternalSimulation(mode, setEvents, setStatus);
-    };
-
+  const pollEvents = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
-      const res = await fetch('http://127.0.0.1:4000/run', {
+      const res = await fetch(
+        `${baseUrl}/api/events?since=${sinceRef.current}&epoch=${epochRef.current}`
+      );
+      const data = await res.json();
+      epochRef.current = data.epoch;
+      sinceRef.current = data.next_index;
+      if (data.reset) {
+        // Backend started a new run (or we just connected): replace everything.
+        setEvents(data.events || []);
+      } else if (data.events && data.events.length > 0) {
+        setEvents(prev => [...prev, ...data.events]);
+      }
+    } catch (err) {
+      console.error('Polling error:', err);
+    } finally {
+      busyRef.current = false;
+    }
+  }, [baseUrl]);
+
+  useEffect(() => {
+    if (!isPolling) return;
+    const interval = setInterval(pollEvents, 400);
+    return () => clearInterval(interval);
+  }, [isPolling, pollEvents]);
+
+  const executeAction = async (endpoint: string, payload?: any) => {
+    try {
+      const res = await fetch(`${baseUrl}/api/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, mode }),
+        body: payload ? JSON.stringify(payload) : undefined,
       });
-      if (!res.ok) throw new Error('Backend not responding');
-      const { run_id } = await res.json();
-      if (runId !== runRef.current) return; // a newer run replaced this one
-
-      const es = new EventSource(`http://127.0.0.1:4000/run/${run_id}/stream`);
-      esRef.current = es;
-      let received = false;
-
-      EVENT_TYPES.forEach(type =>
-        es.addEventListener(type, (e) => {
-          if (runId !== runRef.current) return;
-          received = true;
-          setEvents(prev => [...prev, { type, data: JSON.parse((e as MessageEvent).data) }]);
-          if (type === 'committed' || type === 'stream_end') { setStatus('complete'); es.close(); }
-        })
-      );
-
-      es.onerror = () => {
-        es.close();
-        if (!received) fallback(); else setStatus('error');
-      };
-    } catch {
-      fallback();
+      return await res.json();
+    } catch (err) {
+      console.error(`Action ${endpoint} failed:`, err);
+      return { error: String(err) };
     }
-  }, [stop]);
+  };
 
-  return { startRun, events, status };
-}
+  const startRun = async (command: string, numInvoices: number = 40) => {
+    setIsPolling(false);
+    setEvents([]);
+    sinceRef.current = 0;
+    epochRef.current = -1;
 
-function runInternalSimulation(mode: string, setEvents: any, setStatus: any) {
-  const push = (type: string, data: any) => setEvents((prev: any[]) => [...prev, { type, data }]);
+    await executeAction('reset', { num_invoices: numInvoices });
+    await executeAction('run', { command });
 
-  const naive: [string, any][] = [
-    ['executing', { message: 'Running DROP TABLE directly on production...' }],
-    ['error', { message: 'nightly_report_job crashed — dependency on old_sessions', rows_lost: 48213 }],
-  ];
-  const dry: [string, any][] = [
-    ['fork_started', { message: 'Forking a copy of the database...' }],
-    ['plans_generated', { plans: [
-      { plan_id: 'A', label: 'Hard delete' },
-      { plan_id: 'B', label: 'Archive, then delete in 30 days' },
-      { plan_id: 'C', label: 'Soft delete with flag' },
-      { plan_id: 'D', label: 'Truncate and rebuild' },
-      { plan_id: 'E', label: 'Move to cold storage' },
-    ] }],
-    ['plan_testing', { plan_id: 'A' }],
-    ['plan_result', { plan_id: 'A', status: 'failed', reason: 'nightly_report_job still reads from this table' }],
-    ['plan_testing', { plan_id: 'B' }],
-    ['plan_result', { plan_id: 'B', status: 'passed', reason: 'No dependencies found. Safe to archive.' }],
-    ['plan_testing', { plan_id: 'C' }],
-    ['plan_result', { plan_id: 'C', status: 'failed', reason: 'Soft-delete flag breaks the reconciliation query' }],
-    ['plan_testing', { plan_id: 'D' }],
-    ['plan_result', { plan_id: 'D', status: 'failed', reason: 'Rebuild exceeds the 5-minute maintenance window' }],
-    ['plan_testing', { plan_id: 'E' }],
-    ['plan_result', { plan_id: 'E', status: 'passed', reason: 'Safe, but retrieval is slower than Path B' }],
-    ['committing', { plan_id: 'B', message: 'Applying the winning plan...' }],
-    ['committed', { plan_id: 'B', message: 'Done. old_sessions archived, 0 rows lost.' }],
-  ];
+    // Start listening only AFTER the backend run exists, so no event is missed.
+    setIsPolling(true);
+  };
 
-  const script = mode === 'naive' ? naive : dry;
-  let step = 0;
-  const id = window.setInterval(() => {
-    const [type, data] = script[step++];
-    push(type, data);
-    if (step >= script.length) { setStatus('complete'); clearInterval(id); }
-  }, mode === 'naive' ? 2200 : 1500);
-  return id;
+  // The winner is always derived from the latest comparison_ready event.
+  const winner: Winner | null = useMemo(() => {
+    const c = [...events].reverse().find(e => e.event === 'comparison_ready');
+    if (!c || !c.data) return null;
+    const w = (c.data.results || []).find((r: any) => r.plan_id === c.data.winner_id);
+    if (!w || !w.expanded_plan) return null;
+    return { plan: w.expanded_plan, cert: c.data.cert, token: c.data.token };
+  }, [events]);
+
+  return {
+    events,
+    winner,
+    startRun,
+    executeAction,
+    isPolling,
+    stopPolling: () => setIsPolling(false),
+  };
 }

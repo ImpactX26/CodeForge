@@ -1,22 +1,65 @@
-import type { AgentEvent } from '../hooks/useAgentStream';
+export interface Certificate {
+  plan_hash: string;
+  score: number;
+  expected: string[];
+  needs_approval: boolean;
+  expires_at: number;
+  signature: string;
+}
 
-export type PlanStatus = 'pending' | 'testing' | 'passed' | 'failed' | 'best';
-export interface PlanView { plan_id: string; label: string; status: PlanStatus; reason?: string }
+export interface ExpandedPlan {
+  plan_id: string;
+  strategy?: string;
+  batch_size?: number;
+  steps: any[];
+  held: any[];
+}
 
-export function derivePlans(events: AgentEvent[]): PlanView[] {
-  const raw = events.find(e => e.type === 'plans_generated')?.data.plans ?? [];
-  const results = new Map<string, any>();
-  events.filter(e => e.type === 'plan_result').forEach(e => results.set(e.data.plan_id, e.data));
-  const testingId = [...events].reverse().find(e => e.type === 'plan_testing')?.data.plan_id;
-  const winnerId = events.find(e => e.type === 'committing' || e.type === 'committed')?.data.plan_id;
+export interface AgentEvent {
+  event: string;
+  ts: number;
+  data?: any;
+}
 
-  return raw.map((p: any) => {
-    const r = results.get(p.plan_id);
-    const status: PlanStatus =
-      p.plan_id === winnerId ? 'best'
-      : r ? r.status
-      : p.plan_id === testingId ? 'testing'
-      : 'pending';
-    return { plan_id: p.plan_id, label: p.label, status, reason: r?.reason };
-  });
+export type PlanStatus = 'pending' | 'testing' | 'passed' | 'failed' | 'best' | 'veto';
+
+export interface PlanView {
+  plan_id: string;
+  label: string;
+  status: PlanStatus;
+  reason?: string;
+  score?: number;
+}
+
+/** One simulated plan, exactly as the backend sends it in `comparison_ready`. */
+export interface PlanResult {
+  plan_id: string;
+  strategy: string;
+  status: 'PASS' | 'VETO' | 'FAIL';
+  reason: string;
+  score: number;
+  needs_approval: boolean;
+  pay_count: number;
+  held_count: number;
+  clean_paid: number;
+  total_eligible: number;
+  dup_count: number;
+  fraud_count: number;
+  total_amount: number;
+  batch_size: number;
+  success_pct: number;
+  expanded_plan?: ExpandedPlan;
+}
+
+export interface Reasoning {
+  summary: string;
+  checks: string[];
+  per_plan: Record<string, string>;
+  ranking: { plan_id: string; score: number }[];
+}
+
+export interface Winner {
+  plan: ExpandedPlan;
+  cert: Certificate;
+  token: string;
 }

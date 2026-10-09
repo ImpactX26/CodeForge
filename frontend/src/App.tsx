@@ -2,29 +2,33 @@ import React, { useState } from 'react';
 import { LandingPage } from './pages/LandingPage';
 import { DryRunPage } from './pages/DryRunPage';
 
-const API_BASE_URL = "http://127.0.0.1:4000";
+export default function App() {
+  const [currentPage, setCurrentPage] = useState<'landing' | 'dry-run'>('landing');
+  const [task, setTask] = useState("");
+  const [txCount, setTxCount] = useState(100);
+  
+  // Ensure this points to your Python backend
+  const apiBaseUrl = "http://localhost:8000"; 
 
-export function App() {
-  const [currentTask, setCurrentTask] = useState<string | null>(null);
-
-  // If a task is set, render the dedicated Dry-Run execution page
-  if (currentTask) {
+  if (currentPage === 'landing') {
     return (
-      <DryRunPage 
-        initialTask={currentTask} 
-        apiBaseUrl={API_BASE_URL} 
-        onReset={() => setCurrentTask(null)} 
+      <LandingPage 
+        apiBaseUrl={apiBaseUrl}
+        onTransitionToDryRun={(selectedTask, count) => {
+          setTask(selectedTask);
+          setTxCount(count);
+          setCurrentPage('dry-run');
+        }} 
       />
     );
   }
 
-  // Otherwise, render Page 1 (Landing & Naive mode)
   return (
-    <LandingPage 
-      onTransitionToDryRun={(task) => setCurrentTask(task)} 
-      apiBaseUrl={API_BASE_URL} 
+    <DryRunPage 
+      initialTask={task} 
+      txCount={txCount} 
+      apiBaseUrl={apiBaseUrl}
+      onReset={() => setCurrentPage('landing')} 
     />
   );
 }
-
-export default App;
