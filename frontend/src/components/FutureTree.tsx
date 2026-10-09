@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { AgentEvent } from '../lib/plans';
 
 // What each plan DOES (static explanation). Scores, status and the
-// "why" text on hover always come from the backend.
+// "why" text on hover always come from the backend's live LLM generation.
 const PLAN_META: Record<string, { name: string; detail: string }> = {
   A: { name: 'Blind Aggressive', detail: 'Pays every pending invoice at once, duplicates and risky vendors included. Shows what happens with no safeguards at all.' },
   B: { name: 'Deduplicated Only', detail: 'Drops duplicate invoices but still pays vendors whose bank details just changed. A half-safe shortcut.' },
@@ -111,7 +111,7 @@ export function FutureTree({ events }: { events: AgentEvent[] }) {
 
       {errorEvt && (
         <div className="w-full mt-4 border-2 border-coral bg-coral/5 text-coral p-4 text-xs">
-          <strong>Backend error:</strong> {errorEvt.data?.error}. Check the Uvicorn terminal, fix it, then press RE-RUN BOTH.
+          <strong>Backend error:</strong> {errorEvt.data?.error}. Check the Uvicorn terminal, fix it, then press RE-RUN SEQUENCE.
         </div>
       )}
 
@@ -125,6 +125,7 @@ export function FutureTree({ events }: { events: AgentEvent[] }) {
             const isPending = phase <= 1 || (phase === 2 && idx > activeIndex);
             const isActive = phase === 2 && idx === activeIndex;
             const isEvaluated = phase >= 3 || (phase === 2 && idx < activeIndex);
+            
             return (
               <ExecutionNode
                 key={id}
@@ -218,7 +219,7 @@ function ExecutionNode({ id, idx, result, info, hoverText, isWinner, isPending, 
         {winnerCard && <div className="absolute bottom-0 left-[-1.5px] w-[5px] h-[15px] bg-white rounded-full animate-[slideUp_1.5s_ease-in-out_infinite]" />}
       </div>
 
-      <div className={`w-full p-5 transition-all duration-700 flex flex-col justify-between overflow-hidden ${cardStyle} ${expanded && stage === 3 ? 'min-h-[360px]' : 'min-h-[240px]'}`}>
+      <div className={`w-full p-5 transition-all duration-700 flex flex-col justify-between overflow-hidden ${cardStyle} ${expanded && stage === 3 ? 'min-h-[380px]' : 'min-h-[240px]'}`}>
         <div>
           <div className="flex justify-between items-start text-[10px] tracking-widest mb-3 uppercase">
             <span className={`font-bold ${winnerCard ? 'text-emerald-300' : isActive ? 'text-emerald-600' : ''}`}>PLAN {id}</span>
@@ -273,11 +274,19 @@ function ExecutionNode({ id, idx, result, info, hoverText, isWinner, isPending, 
             </div>
           )}
 
-          {/* HOVER REASONING (written by the backend from the real numbers) */}
+          {/* HOVER REASONING (Powered by Live AI) */}
           <div className={`grid transition-all duration-300 ease-in-out ${expanded ? 'grid-rows-[1fr] mt-2' : 'grid-rows-[0fr]'}`}>
             <div className="overflow-hidden">
               <div className={`text-[11px] font-sans p-3 border-l-2 leading-relaxed ${winnerCard ? 'bg-black/30 text-emerald-300 border-emerald-400' : 'bg-gray-100 text-gray-700 border-gray-400'}`}>
-                <strong className="block mb-1.5 font-mono text-[9px] tracking-widest uppercase opacity-80">Agent Reasoning:</strong>
+                
+                {/* Visual AI Indicator */}
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="text-[10px] animate-pulse">✨</span>
+                  <strong className="font-mono text-[9px] tracking-widest uppercase opacity-80">
+                    Live AI Safety Auditor
+                  </strong>
+                </div>
+
                 {hoverText || (showResult ? result.reason : 'Waiting for the sandbox result...')}
               </div>
             </div>
